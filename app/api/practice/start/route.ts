@@ -20,12 +20,12 @@ export async function POST(request: Request) {
       challenge = await ensureDailyChallenge();
       if (!challenge) throw new ApiError(400, "No daily challenge is available yet.");
       subjectId = challenge.subject_id;
-      const done = (await get("SELECT id FROM daily_challenge_attempts WHERE user_id = ? AND date = ?", user.id, todayKey());
+      const done = await get("SELECT id FROM daily_challenge_attempts WHERE user_id = ? AND date = ?", user.id, todayKey());
       if (done) throw new ApiError(409, "You have already completed today's challenge. Come back tomorrow!");
       const ids: string[] = JSON.parse(challenge.question_ids);
       const rows = await all<QuestionRow>("SELECT * FROM questions WHERE id IN (" + ids.map(() => "?").join(",") + ")", ...ids);
       const byId = new Map(rows.map((q) => [q.id, q]));
-      questions = ids.map((id) => byId.get(id))).filter(Boolean) as QuestionRow[];
+      questions = ids.map((id) => byId.get(id)).filter(Boolean) as QuestionRow[];
       count = questions.length;
     } else {
       const subject = await get<any>("SELECT * FROM subjects WHERE id = ? AND active = 1", subjectId);

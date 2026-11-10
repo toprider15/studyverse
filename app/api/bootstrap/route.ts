@@ -64,14 +64,14 @@ export async function GET() {
       (await all<{ key: string; value: string }>("SELECT key, value FROM platform_settings")).map((s) => [s.key, s.value])
     );
     const classmates = user
-      ? await all<any>(
+      ? (await all<any>(
           "SELECT u.*, c.name AS class_name FROM users u LEFT JOIN classes c ON c.id = u.class_id WHERE u.role = 'student' AND u.status = 'active' AND u.class_id = ? AND u.id <> ? ORDER BY u.display_name",
           user.class_id,
           user.id
         )).map(publicUser)
       : [];
     const notificationCount = user
-      ? Number(await get<{ n: number }>("SELECT COUNT(*) AS n FROM notifications WHERE user_id = ? AND read = 0", user.id)?.n ?? 0)
+      ? Number((await get<{ n: number }>("SELECT COUNT(*) AS n FROM notifications WHERE user_id = ? AND read = 0", user.id))?.n ?? 0)
       : 0;
     return ok({
       user: user ? safeUser(user) : null,

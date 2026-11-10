@@ -16,7 +16,7 @@ export async function GET(request: Request) {
     if (type) { sql += ` AND t.type = ?`; params.push(type); }
     sql += ` GROUP BY t.id ORDER BY t.created_at DESC`;
     const rows = await all<any>(sql, ...params);
-    const tournaments = rows.map((t) => ({
+    const tournaments = await Promise.all(rows.map(async (t) => ({
       id: t.id,
       name: t.name,
       type: t.type,
@@ -33,7 +33,7 @@ export async function GET(request: Request) {
       createdAt: t.created_at,
       participants: Number(t.participant_count),
       registered: user ? Boolean(await get("SELECT id FROM tournament_participants WHERE tournament_id = ? AND user_id = ?", t.id, user.id)) : false,
-    }));
+    })));
     return ok({ tournaments });
   } catch (error) {
     return fail(error);

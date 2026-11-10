@@ -13,10 +13,12 @@ import type { QSeed } from "./data/types";
 
 type Row = Record<string, string | number | null>;
 
-async function ins(table: string, row: Row) {
+let conn: DatabaseSync;
+
+function ins(table: string, row: Row) {
   const keys = Object.keys(row);
   const sql = `INSERT INTO ${table} (${keys.join(",")}) VALUES (${keys.map(() => "?").join(",")})`;
-  await run(sql, ...keys.map((k) => row[k]));
+  conn.prepare(sql).run(...keys.map((k) => row[k]));
 }
 
 function iso(daysFromNow = 0, hour = 9, minute = 0) {
@@ -47,7 +49,7 @@ function roomJson() {
   return JSON.stringify({ theme: "nebula", decor: [], wall: "#17123a" });
 }
 
-function seedQuestions(conn: DatabaseSync) {
+function seedQuestions(_db: DatabaseSync) {
   const now = new Date().toISOString();
   const all: Record<string, QSeed[]> = { ...LANG1, ...LANG2, ...CORE1, ...CORE2 };
   for (const [subject, list] of Object.entries(all)) {
@@ -56,14 +58,14 @@ function seedQuestions(conn: DatabaseSync) {
       const [prompt, options, correct, difficulty, explanation] = q;
       const lang = ({ spanish_cap: "spanish_capable", spanish_em: "spanish_emergent", french_reg: "french_regular", french_em: "french_emergent", hindi: "hindi", german: "german" } as Record<string, string>)[subject] || "any";
       const track = subject === "math_std" ? "standard" : subject === "math_ext" ? "extended" : "any";
-      await ins("questions", {
+      ins("questions", {
         id: `q_${subject}_${i}`, subject_id: subject, difficulty,
         marks: difficulty === "hard" ? 3 : difficulty === "medium" ? 2 : 1,
         type: "mcq", prompt, options: JSON.stringify(options), correct_index: correct, explanation,
         status: "approved", official: 1, language_division: lang, math_track: track,
         created_by: "u_teacher", approved_by: "u_teacher", approved_at: now, created_at: now,
       });
-      await ins("question_approvals", {
+      ins("question_approvals", {
         id: `qa_q_${subject}_${i}`, question_id: `q_${subject}_${i}`, reviewer_id: "u_teacher",
         action: "approved", note: "Approved during Term 1 question-bank setup.", created_at: now,
       });
@@ -74,7 +76,7 @@ function seedQuestions(conn: DatabaseSync) {
     const [prompt, options, correct, difficulty, explanation] = p.q;
     const lang = ({ spanish_cap: "spanish_capable", spanish_em: "spanish_emergent", french_reg: "french_regular", french_em: "french_emergent", hindi: "hindi", german: "german" } as Record<string, string>)[p.subject] || "any";
     const track = p.subject === "math_std" ? "standard" : p.subject === "math_ext" ? "extended" : "any";
-    await ins("questions", {
+    ins("questions", {
       id: `q_${p.subject}_pending_${i}`, subject_id: p.subject, difficulty,
       marks: difficulty === "hard" ? 3 : difficulty === "medium" ? 2 : 1,
       type: "mcq", prompt, options: JSON.stringify(options), correct_index: correct, explanation,
@@ -84,11 +86,11 @@ function seedQuestions(conn: DatabaseSync) {
   }
 }
 
-function seedBracket(conn: DatabaseSync, tournamentId: string, rounds: { round: number; matches: { p1: string | null; p2: string | null; s1?: number; s2?: number; winner?: string | null; status?: string }[] }[]) {
+function seedBracket(_db: DatabaseSync, tournamentId: string, rounds: { round: number; matches: { p1: string | null; p2: string | null; s1?: number; s2?: number; winner?: string | null; status?: string }[] }[]) {
   for (const r of rounds) {
   for (let i = 0; i < r.matches.length; i++) {
     const m = r.matches[i];
-      await ins("tournament_matches", {
+      ins("tournament_matches", {
         id: `tm_${tournamentId}_${r.round}_${i}`, tournament_id: tournamentId, round: r.round, slot: i,
         player1_id: m.p1, player2_id: m.p2, p1_score: m.s1 ?? null, p2_score: m.s2 ?? null,
         winner_id: m.winner ?? null, status: m.status ?? (m.winner ? "complete" : "scheduled"),
@@ -98,19 +100,20 @@ function seedBracket(conn: DatabaseSync, tournamentId: string, rounds: { round: 
   }
 }
 
-export async function seedDatabase() {
+export function seedDatabase(db: DatabaseSync) {
+  conn = db;
   const now = new Date().toISOString();
   const today = dateKey(0);
 
-  for (const c of CLASSES) await ins("classes", { ...c, homeroom_teacher_id: "u_teacher", created_at: now });
+  for (const c of CLASSES) ins("classes", { ...c, homeroom_teacher_id: "u_teacher", created_at: now });
 
   for (const s of SUBJECTS) {
-    await ins("subjects", {
+    ins("subjects", {
       id: s.id, name: s.name, slug: s.slug, category: s.category, division: s.division,
       icon: s.icon, color: s.color, description: s.description, order_index: SUBJECTS.indexOf(s), active: 1,
     });
   }
-  await ins("subjects", {
+  ins("subjects", {
     id: HIDDEN_SUBJECT.id, name: HIDDEN_SUBJECT.name, slug: HIDDEN_SUBJECT.slug, category: "logic",
     division: null, icon: HIDDEN_SUBJECT.icon, color: HIDDEN_SUBJECT.color,
     description: HIDDEN_SUBJECT.description, order_index: 99, active: 0,
@@ -120,13 +123,13 @@ export async function seedDatabase() {
   const teacherHash = hashPassword("teacher123");
   const adminHash = hashPassword("admin123");
 
-  await ins("users", {
+  ins("users", {
     id: "u_admin", username: "admin", display_name: "StudyVerse Admin", password_hash: adminHash,
     role: "admin", grade: 0, class_id: null, language_subject: null, language_division: null, math_track: null,
     avatar: avatarJson("🛡️"), room: roomJson(), xp: 0, coins: 0, level: 1, streak: 0,
     last_active_date: today, status: "active", created_at: now, approved_at: now,
   });
-  await ins("users", {
+  ins("users", {
     id: "u_teacher", username: "teacher", display_name: "Ms. Rivera", password_hash: teacherHash,
     role: "teacher", grade: 0, class_id: null, language_subject: null, language_division: null, math_track: null,
     avatar: avatarJson("🧑‍🏫"), room: roomJson(), xp: 0, coins: 0, level: 1, streak: 0,
@@ -134,7 +137,7 @@ export async function seedDatabase() {
   });
 
   for (const s of STUDENTS) {
-    await ins("users", {
+    ins("users", {
       id: s.id, username: s.username, display_name: s.name, password_hash: studentHash,
       role: "student", grade: 9, class_id: s.cls, language_subject: LANG_SUBJECT[s.lang], language_division: s.lang,
       math_track: s.math, avatar: avatarJson(s.emoji), room: roomJson(), xp: s.xp, coins: s.coins,
@@ -147,13 +150,13 @@ export async function seedDatabase() {
     const subjectIds = ["langlit", LANG_SUBJECT[s.lang], "math_std", "physics", "chemistry", "biology", "humanities"];
     if (s.math === "extended") subjectIds.push("math_ext");
     for (const subjectId of subjectIds) {
-      await ins("enrollments", { user_id: s.id, subject_id: subjectId, created_at: now });
+      ins("enrollments", { user_id: s.id, subject_id: subjectId, created_at: now });
     }
   }
 
   for (const subject of SUBJECTS) {
     const unitId = `unit_${subject.id}`;
-    await ins("units", {
+    ins("units", {
       id: unitId, subject_id: subject.id, term: 1, title: "Term 1 — Sample Curriculum",
       description: "This unit is sample demonstration content. The official Term 1 syllabus has not been uploaded by the administrator yet. Teachers can edit this unit, add official topics and replace the sample notes.",
       order_index: 1, status: "published", is_sample: 1, created_by: "u_teacher",
@@ -163,7 +166,7 @@ export async function seedDatabase() {
   for (let idx = 0; idx < titles.length; idx++) {
     const title = titles[idx];
       const topicId = `topic_${subject.id}_${idx + 1}`;
-      await ins("topics", {
+      ins("topics", {
         id: topicId, unit_id: unitId, title, summary: `Sample revision topic for ${title.toLowerCase()}.`,
         notes: [
           `**Sample revision note — not official syllabus content.**`,
@@ -186,21 +189,21 @@ export async function seedDatabase() {
       ];
       for (let ci = 0; ci < cards.length; ci++) {
         const c = cards[ci];
-        await ins("flashcards", { id: `flash_${topicId}_${ci}`, topic_id: topicId, front: c.front, back: c.back, order_index: ci });
+        ins("flashcards", { id: `flash_${topicId}_${ci}`, topic_id: topicId, front: c.front, back: c.back, order_index: ci });
       }
   }
   }
 
   seedQuestions(conn);
 
-  for (const a of ACHIEVEMENTS) await ins("achievements", { ...a, hidden: 0 });
+  for (const a of ACHIEVEMENTS) ins("achievements", { ...a, hidden: 0 });
   for (const c of COLLECTIBLES) {
-    await ins("collectibles", { ...c, active: 1, seasonal: c.type === "seasonal" ? 1 : 0, created_at: now });
+    ins("collectibles", { ...c, active: 1, seasonal: c.type === "seasonal" ? 1 : 0, created_at: now });
   }
-  for (const g of ARCADE_GAMES) await ins("arcade_games", { ...g, active: 1 });
+  for (const g of ARCADE_GAMES) ins("arcade_games", { ...g, active: 1 });
 
   for (const e of EVENTS) {
-    await ins("school_events", {
+    ins("school_events", {
       id: e.id, title: e.title, description: e.description, category: e.category,
       starts_at: iso(e.starts_at, e.start_hour), ends_at: iso(e.ends_at, e.end_hour),
       location: e.location, published: 1, created_by: "u_admin", created_at: now,
@@ -210,7 +213,7 @@ export async function seedDatabase() {
   for (const [day, items] of Object.entries(MENU_ITEMS)) {
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
-      await ins("school_menus", {
+      ins("school_menus", {
         id: `menu_${day}_${i}`, day_of_week: Number(day), week_label: week, category: item.category,
         item: item.item, description: item.description, special: item.special ?? 0, active: 1,
         updated_by: "u_teacher", updated_at: now,
@@ -225,7 +228,7 @@ export async function seedDatabase() {
       const subjectId = subjects[idx];
       const answered = 12 + ((si * 7 + idx * 11) % 55);
       const correct = Math.max(4, Math.round(answered * (0.58 + ((si + idx) % 30) / 100)));
-      await ins("subject_progress", {
+      ins("subject_progress", {
         user_id: s.id, subject_id: subjectId, questions_answered: answered, correct,
         xp: correct * 8 + ((si + idx) % 5) * 15, last_activity: iso(-((si + idx) % 9), 18),
       });
@@ -241,7 +244,7 @@ export async function seedDatabase() {
     { kind: "streak", title: "Reached a 6-day streak", detail: "Keep it going!", icon: "🔥", created_at: iso(-2, 8, 30) },
     { kind: "daily", title: "Completed the daily challenge", detail: "5/5 correct · +50 XP bonus", icon: "⭐", created_at: iso(-3, 13, 0) },
   ];
-  for (let i = 0; i < activities.length; i++) await ins("activity", { id: `act_alex_${i}`, user_id: "u_alex", ...activities[i] });
+  for (let i = 0; i < activities.length; i++) ins("activity", { id: `act_alex_${i}`, user_id: "u_alex", ...activities[i] });
 
   const xpSeed = [
     { amount: 80, reason: "Academic battle victory", ref: "seed_match_1", created_at: iso(0, 16, 10) },
@@ -251,8 +254,8 @@ export async function seedDatabase() {
   ];
   for (let i = 0; i < xpSeed.length; i++) {
     const t = xpSeed[i];
-    await ins("xp_transactions", { id: `xp_alex_${i}`, user_id: "u_alex", ...t });
-    await ins("coin_transactions", { id: `coin_alex_${i}`, user_id: "u_alex", amount: Math.round(t.amount / 5), reason: t.reason, ref: t.ref, created_at: t.created_at });
+    ins("xp_transactions", { id: `xp_alex_${i}`, user_id: "u_alex", ...t });
+    ins("coin_transactions", { id: `coin_alex_${i}`, user_id: "u_alex", amount: Math.round(t.amount / 5), reason: t.reason, ref: t.ref, created_at: t.created_at });
   }
 
   const matchSeeds = [
@@ -264,7 +267,7 @@ export async function seedDatabase() {
     { id: "seed_match_pending", subject: "spanish_em", p1: "u_diego", p2: "u_alex", qs: ["q_spanish_em_0", "q_spanish_em_1", "q_spanish_em_2", "q_spanish_em_3", "q_spanish_em_4", "q_spanish_em_5"], s1: 0, s2: 0, winner: null, days: 0, hour: 17, status: "pending", mode: "live", neutral: 0 },
   ];
   for (const m of matchSeeds) {
-    await ins("matches", {
+    ins("matches", {
       id: m.id, subject_id: m.subject, player1_id: m.p1, player2_id: m.p2, mode: m.mode,
       status: m.status, question_ids: JSON.stringify(m.qs), neutral: m.neutral,
       p1_score: m.s1, p2_score: m.s2, p1_time_ms: 42000, p2_time_ms: 51000, winner_id: m.winner,
@@ -272,8 +275,8 @@ export async function seedDatabase() {
       xp_awarded: m.status === "complete" ? 60 : 0, coins_awarded: m.status === "complete" ? 15 : 0, created_at: iso(m.days, m.hour - 1),
     });
     if (m.status === "complete") {
-      await ins("match_progress", { match_id: m.id, user_id: m.p1, current_index: 6, score: m.s1, started_at: iso(m.days, m.hour), completed_at: iso(m.days, m.hour), total_ms: 42000 });
-      await ins("match_progress", { match_id: m.id, user_id: m.p2, current_index: 6, score: m.s2, started_at: iso(m.days, m.hour), completed_at: iso(m.days, m.hour), total_ms: 51000 });
+      ins("match_progress", { match_id: m.id, user_id: m.p1, current_index: 6, score: m.s1, started_at: iso(m.days, m.hour), completed_at: iso(m.days, m.hour), total_ms: 42000 });
+      ins("match_progress", { match_id: m.id, user_id: m.p2, current_index: 6, score: m.s2, started_at: iso(m.days, m.hour), completed_at: iso(m.days, m.hour), total_ms: 51000 });
     }
   }
 
@@ -301,7 +304,7 @@ export async function seedDatabase() {
   ];
   for (let i = 0; i < arcadeSeed.length; i++) {
     const s = arcadeSeed[i];
-    await ins("arcade_scores", {
+    ins("arcade_scores", {
       id: `as_seed_${i}`, user_id: s.user, game_key: s.game, difficulty: s.diff, score: s.score,
       duration_ms: s.duration, created_at: iso(-((i % 6) + 1), 17),
     });
@@ -315,7 +318,7 @@ export async function seedDatabase() {
     { id: "sd_5", game: "word", diff: "medium", ch: "u_priya", op: null, cs: 26, os: null, winner: null, status: "open", days: 0 },
   ];
   for (const s of showdownSeed) {
-    await ins("showdown_matches", {
+    ins("showdown_matches", {
       id: s.id, game_key: s.game, difficulty: s.diff, challenger_id: s.ch, opponent_id: s.op,
       challenger_score: s.cs, opponent_score: s.os, status: s.status, winner_id: s.winner,
       created_at: iso(s.days, 16), completed_at: s.status === "complete" ? iso(s.days, 17) : null,
@@ -331,14 +334,14 @@ export async function seedDatabase() {
     { id: "t_showdown_reaction", name: "Reaction Rush Showdown", type: "showdown", subject_id: null, class_id: null, game_key: "reaction", description: "School-wide Showdown on the Reaction Test. Fastest average time wins.", status: "registration", starts_at: iso(4, 16), ends_at: iso(4, 18), max: 16, winner: null, participants: ["u_alex", "u_liam", "u_maya", "u_ava"] },
   ];
   for (const t of tournamentSeed) {
-    await ins("tournaments", {
+    ins("tournaments", {
       id: t.id, name: t.name, type: t.type, subject_id: t.subject_id, class_id: t.class_id, game_key: t.game_key,
       description: t.description, format: "knockout", status: t.status, starts_at: t.starts_at, ends_at: t.ends_at,
       max_participants: t.max, created_by: "u_admin", winner_id: t.winner, created_at: iso(-12, 10),
     });
   for (let i = 0; i < t.participants.length; i++) {
     const uid = t.participants[i];
-      await ins("tournament_participants", {
+      ins("tournament_participants", {
         id: `tp_${t.id}_${uid}`, tournament_id: t.id, user_id: uid, seed: i + 1,
         placement: t.winner === uid ? 1 : null, registered_at: iso(-10 + i, 11),
       });
@@ -385,7 +388,7 @@ export async function seedDatabase() {
   ];
   for (let i = 0; i < owned.length; i++) {
     const item = owned[i];
-    await ins("inventory", {
+    ins("inventory", {
       id: item.id, user_id: item.user_id, collectible_id: item.collectible_id,
       equipped: item.equipped, source: item.source, acquired_at: iso(item.days, 12),
     });
@@ -394,7 +397,7 @@ export async function seedDatabase() {
   const unlocked = ["ach_welcome", "ach_quiz_10", "ach_battle_first", "ach_battle_win", "ach_arcade_first", "ach_tournament"];
   for (let i = 0; i < unlocked.length; i++) {
     const achievementId = unlocked[i];
-    await ins("user_achievements", {
+    ins("user_achievements", {
       id: `ua_alex_${i}`, user_id: "u_alex", achievement_id: achievementId, unlocked_at: iso(-20 + i, 10),
     });
   }
@@ -407,24 +410,24 @@ export async function seedDatabase() {
   ];
   for (let i = 0; i < notices.length; i++) {
     const n = notices[i];
-    await ins("notifications", {
+    ins("notifications", {
       id: `ntf_alex_${i}`, user_id: "u_alex", title: n.title, body: n.body, type: n.type,
       link: n.link, read: i > 1 ? 1 : 0, created_at: iso(n.days, n.hour),
     });
   }
 
-  await ins("daily_challenges", {
+  ins("daily_challenges", {
     id: "daily_seed", date: today, subject_id: "math_std",
     question_ids: JSON.stringify(["q_math_std_0", "q_math_std_1", "q_math_std_2", "q_math_std_3", "q_math_std_4"]),
     xp_reward: 50, coin_reward: 10,
   });
 
-  await ins("reports", {
+  ins("reports", {
     id: "report_seed_1", reporter_id: "u_maya", target_type: "profile", target_id: "u_theo",
     reason: "Display name concerns", details: "The display name uses language that made a classmate uncomfortable.",
     status: "open", handled_by: null, resolution_note: null, created_at: iso(-1, 13), resolved_at: null,
   });
-  await ins("reports", {
+  ins("reports", {
     id: "report_seed_2", reporter_id: "u_liam", target_type: "arcade_score", target_id: "as_seed_1",
     reason: "Suspicious score", details: "Score looks higher than the game's maximum.",
     status: "reviewing", handled_by: "u_teacher", resolution_note: "Checking the score submission log.",
@@ -441,5 +444,5 @@ export async function seedDatabase() {
     ["arcade_reward_note", "Coins are cosmetic only. Arcade and Showdown rewards never affect academic scores or grades."],
     ["safe_mode", "on"],
   ];
-  for (const [key, value] of settings) await ins("platform_settings", { key, value });
+  for (const [key, value] of settings) ins("platform_settings", { key, value });
 }
