@@ -18,9 +18,7 @@ export async function POST(req: NextRequest) {
       username,
       password,
       displayName,
-      grade: 9,
       classId,
-      languageSubject: body.languageSubject || null,
       languageDivision,
       mathTrack,
     });

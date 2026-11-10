@@ -6,7 +6,7 @@ import { fail, ok, readBody } from "@/lib/http";
 import { uid } from "@/lib/password";
 
 async function loadMatch(id: string, viewerId: string) {
-  const m = (await get<any>("SELECT * FROM matches WHERE id = ?", id);
+  const m = await get<any>("SELECT * FROM matches WHERE id = ?", id);
   if (!m) return null;
   const qids = JSON.parse(m.question_ids || "[]");
   const answers: Record<string, Record<string, string>> = { [m.player1_id]: {}, [m.player2_id]: {} };
